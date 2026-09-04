@@ -59,7 +59,7 @@ Use this when feedrattler fails or produces an incorrect conversion.
 1. Clone the feedstock (from your fork)
 2. Read the existing `meta.yaml`
 3. Create a new `recipe.yaml` following v1 format
-4. Add `conda_build_tool: rattler-build` and `conda_install_tool: pixi` to `conda-forge.yaml`
+4. Add `conda_build_tool: rattler-build` and `conda_install_tool: pixi` to `conda-forge.yml`
 5. Delete the old `meta.yaml`
 6. Commit those changes
 7. Rerender: `pixi exec conda-smithy rerender --commit=all`
