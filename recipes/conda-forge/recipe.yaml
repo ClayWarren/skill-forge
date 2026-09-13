@@ -10,7 +10,7 @@ source:
   sha256: d82d06b562960950be354a34b1d8f5b34baf67d059373c85cdfecf150fb617e9
 
 build:
-  number: 0
+  number: 1
   noarch: generic
   script:
     - mkdir -p $PREFIX/share/agent-skills/${{ skill }}

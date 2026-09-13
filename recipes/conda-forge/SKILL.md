@@ -1,171 +1,63 @@
 ---
 name: conda-forge
-description: Performs conda-forge operations. Fixes failing builds by analyzing CI logs, creates new packages via staged-recipes, adds native ARM CI support or explicit cross-compilation to feedstocks, and migrates recipes from v0 to v1 format. Use when working with conda-forge feedstocks, staged-recipes, build failures, recipe migrations, or when the user mentions conda-forge.
+description: Create or update conda-forge recipes, diagnose feedstock CI, and enable build platforms.
 license: BSD-3-Clause
-compatibility: >-
-  Requires gh (GitHub CLI), git, curl, jq, tar, and pixi with
-  rattler-build, conda-smithy, and cf-job-logs. Requires network access.
 ---
 
 # Conda-Forge Skill
 
-First, determine the workflow by checking the current working directory:
-- **staged-recipes** repo → you are creating a new feedstock
-- **\<name\>-feedstock** repo → you are updating an existing feedstock
+Use GitHub/repository tooling such as gh and git, and pixi for recipe tools as needed. Target-platform builds may require a remote runner.
 
-## Staged Recipes: Creating New Feedstocks
+Use the user's request and repository state to identify the workflow. A staged-recipes checkout usually means a new package; a feedstock usually means an existing package. Confirm the intended repository when working elsewhere.
 
-New packages are submitted via [staged-recipes](https://github.com/conda-forge/staged-recipes). After merge, conda-forge auto-creates a dedicated feedstock.
+Complete the requested change and relevant validation within the authorized scope. Status checks are read-only. Present local work for review when requested; push, open or update PRs, and dispatch CI only when authorized. Existing approval covers the reviewed action without another confirmation. Stop at the requested finish line or a concrete blocker.
 
-Fork and branch:
+## Choose the relevant guidance
 
-```bash
-gh repo fork conda-forge/staged-recipes --clone=true
-cd staged-recipes
-git switch -c <PACKAGE_NAME>
-```
+- New Python package: [Python recipe template](references/example-recipe-python.md).
+- New Go or Rust package: [Go template](references/example-recipe-go.md) or [Rust template](references/example-recipe-rust.md).
+- ARM enablement or cross-compilation: [ARM builds](references/arm-builds-and-cross-compilation.md).
+- Requested or necessary recipe-format conversion: [v0 → v1 migration](references/rattler-build-migration.md).
+- Adding CLI completions: [shell completions](references/shell-completions.md).
 
-Generate a recipe for Python packages with `pixi exec grayskull pypi --use-v1-format --strict-conda-forge <PACKAGE_NAME>`. Since grayskull creates the `my-package/recipe.yaml` in the CWD, run this command in the `recipes/` directory of your staged-recipes fork.
+Read only references relevant to the current decision.
 
-For Go or Rust, adapt the templates from [example-recipe-go.md](references/example-recipe-go.md) or [example-recipe-rust.md](references/example-recipe-rust.md). See also [example-recipe-python.md](references/example-recipe-python.md).
+## New packages
 
-Place the recipe in `recipes/<PACKAGE_NAME>/recipe.yaml`.
+Check for an existing feedstock or overlapping submission before adding a recipe under `staged-recipes/recipes/<PACKAGE_NAME>/`. Work from a personal fork.
 
-Recipe rules:
+For Python, `pixi exec grayskull pypi --use-v1-format --strict-conda-forge <PACKAGE_NAME>` can provide a starting point; run it from `recipes/` and review the generated recipe. Use the language references for other packages.
 
-- Use source tarballs with SHA256 checksums (compute with `curl -Ls "<URL>" | sha256sum -`)
-- Use SPDX license identifiers and include `license_file`
-- Tests are mandatory (at minimum: import test for Python, `--help` for CLI)
-- All dependencies must already exist on conda-forge
-- Remove any template/placeholder comments
+Use verified source checksums, appropriate SPDX identifiers and packaged license files, accurate dependency placement, and meaningful package tests. Check dependency availability for the enabled platforms; related recipes submitted together may satisfy dependencies within staged-recipes. Remove unused template material.
 
-Test locally:
+Use current repository pinning, including `python_min` for noarch Python recipes. Supply a variant override if local validation requires one; do not assume a fixed default Python version.
 
-```bash
-rattler-build build -r recipes/<PACKAGE_NAME> -m .ci_support/<VARIANT>.yaml
-```
+Complete the repository PR template accurately. When authorized to submit, open a draft and leave readiness to the human. Do not disable platforms merely to obtain passing CI.
 
-For `noarch: python` packages, provide a `python_min` variant override since staged-recipes doesn't define it:
+## Existing feedstocks
 
-```bash
-rattler-build build -r recipes/<PACKAGE_NAME> -m .ci_support/<VARIANT>.yaml --variant python_min=3.10
-```
+Read the current recipe, relevant review requests, and the parts of the build configuration affected by the change. Preserve the recipe format unless conversion is in scope or required for the change.
 
-Submit a draft PR, **always** use the PR template for the description. When the conda package ships static libraries (go, rust), don't check that box in the PR template.
-Watch CI until green. Don't mark as ready for review — let the human do that. To skip a platform, add `skip: win` in the `build` section.
+Develop on a personal fork branch based on the intended upstream revision. Inspect existing branches and local changes before synchronizing; a new branch from upstream usually avoids resetting or force-pushing fork `main`.
 
-For submitting multiple related packages, place each in a separate directory under `recipes/`. The build system resolves dependency order within staged-recipes.
+Keep edits focused. Recipe changes belong in `recipe/`; platform changes may also require maintained configuration such as `conda-forge.yml`. Regenerate derived CI files with conda-smithy rather than hand-editing them.
 
-## Existing Feedstock: Updating
+For a rebuild at the same version, check the base and published builds and bump the build number once. Keep an existing bump throughout follow-up fixes. For a new version, reset as appropriate to the recipe's build-number scheme.
 
-Work on `recipe/recipe.yaml`. If you only find a `meta.yaml`, you must convert it to `recipe.yaml` first — see [rattler-build-migration.md](references/rattler-build-migration.md).
+## CI diagnosis and validation
 
-### Critical: Always Use a Personal Fork
+For a reported CI failure, inspect the current job and causal log before choosing a local reproduction. `pixi exec cf-job-logs list-jobs --all --json <PR_URL>` and `download-log <PR_URL> <JOB_ID>` can help. Check the tool's help for supported options.
 
-conda-forge requires all PRs to come from forks, NOT from branches in the main feedstock repository.
+Pending jobs need not prevent investigation of completed failures. Wait when completion is needed for the next decision; avoid rerunning unchanged deterministic failures.
 
-If you push directly to `conda-forge/<feedstock>`, it will try to upload to conda-forge directly which is not allowed!
+Treat missing candidates, imports, compilation errors, and missing commands as symptoms. Check names, variants, dependency availability, activation, and upstream requirements before changing dependencies.
 
-You MUST:
+Run relevant recipe lint and targeted tests. Use a matching variant for local builds where supported; local testing on a different architecture does not establish target-platform acceptance. Preserve existing meaningful tests and add coverage for demonstrated gaps.
 
-1. Fork the feedstock to your personal GitHub account (or use an existing fork)
-2. Push your fix branch to YOUR fork
-3. Create a PR from <YOUR_USERNAME>:<branch> to conda-forge/<feedstock>:main
+Rerender when maintained configuration or recipe changes affect generated files, or when required by the repository. Review all generated changes before committing. Keep recipe and rerender commits separate when useful or requested.
 
-Use `gh repo fork conda-forge/<feedstock> --clone` to fork the feedstock.
-This will clone the forked repository with the origin remote pointing to your fork and the upstream remote pointing to the original feedstock.
+## Final review
 
-**Important**: If the fork already existed, its `main` branch may be out of date with upstream. Always sync it before creating your fix branch. First back up the fork's current `main` in case it has useful commits, then reset to upstream:
+Compare the final diff and description with all outstanding maintainer requests and the current PR template, including disclosure requirements. Describe the problem, change, and material validation briefly. Report pending checks honestly; distinguish successful builds from publication and native runtime acceptance.
 
-```bash
-git fetch upstream
-git checkout main
-git branch main-fork-backup
-git push origin main-fork-backup
-git reset --hard upstream/main
-git push origin main --force
-```
-
-### Fixing Failing Builds
-
-Start by reproducing the issue locally — run a local build (see Test Locally below) and iterate from there. If `rattler-build` fails, it keeps the work directory at `output/bld/rattler-build_.../work` — you can debug with `cd <work> && source build_env.sh`.
-
-If the user explicitly references CI failures or pastes a link, use `cf-job-logs` to investigate:
-
-1. Wait for CI: `pixi exec cf-job-logs wait-for-ci --json <PR_URL>`
-   - Polls until all checks complete, then reports which passed/failed
-   - Exits 0 if all pass, 1 if any fail — use this to gate further investigation
-   - `--fail-fast` (default: true) returns as soon as any check fails instead of waiting for the rest — use it when you want to iterate on a single specific error. Pass `--no-fail-fast` to wait for every check to finish when you want to confirm all results up front and then collect all errors at once
-2. List failed jobs: `pixi exec cf-job-logs list-jobs --json <PR_URL>`
-   - Returns a JSON array of jobs with `id`, `result`, `platform`, and `name` fields
-   - The output only contains failed jobs by default; use `--all` to include successful jobs if needed
-   - Pipe to `jq` for filtering if needed
-3. Download a specific job's log: `pixi exec cf-job-logs download-log <PR_URL> <JOB_ID>`
-   - Use the `id` from the `list-jobs` output as `<JOB_ID>`
-   - Logs are sanitized by default (timestamps and known boilerplate removed; `--no-sanitize` is available but rarely needed)
-   - Redirect to a file with `> log.txt` for large logs
-4. Read the error log — understand the root cause before making any changes
-
-**Recommended workflow**: If CI is still running, start with `wait-for-ci` to block until completion. Then use `list-jobs` to get the job IDs for any failures, and `download-log` to fetch the actual logs.
-
-Run `pixi exec cf-job-logs --help` or `pixi exec cf-job-logs <command> --help` for the full list of options.
-
-Apply the minimal fix needed. Only modify files in the `recipe/` directory.
-
-### Test Locally
-
-Always test with a variant config that matches your local platform:
-
-```bash
-rattler-build build --recipe recipe -m .ci_support/<VARIANT>.yaml
-```
-
-### Finalize Changes
-
-After all recipe changes, always run:
-
-```bash
-pixi exec conda-smithy rerender --no-check-uptodate --commit=auto
-pixi exec conda-smithy lint --conda-forge .
-```
-
-Commit your recipe changes first, then rerender (which auto-commits if there are changes). Only modify files in the `recipe/` directory — everything else is autogenerated by rerender.
-
-Push to your fork and create a PR to `conda-forge/<FEEDSTOCK>:main`.
-
-## General
-
-If a tool isn't available locally, use `pixi exec <tool>` to run tools (rattler-build, conda-smithy, grayskull, feedrattler) without installing them. Use `mktemp -d` for temporary working directories.
-
-### Python Version Pinning (noarch recipes)
-
-For `noarch: python` recipes, use conda-forge's pinning conventions:
-
-- host: `python ${{ python_min }}.*`
-- run: `python >=${{ python_min }}`
-- tests: `python_version: ${{ python_min }}.*`
-
-If a newer Python minimum is required than conda-forge's default (3.10), override `python_min` in the `context` section of the recipe.
-
-### Common Errors
-
-- **`no candidates were found`**: Wrong dependency name. Use `pixi search <name>` (supports globs like `pixi search 'lib*'`).
-- **Import errors in test phase**: Missing runtime dependency → add to `requirements.run`.
-- **Compilation failure**: Missing library → add to `requirements.host`.
-- **Command not found (exit 127)**: Missing build tool → add to `requirements.build`.
-
-### Key Decisions
-
-- `noarch: python`: Use for pure Python packages with no compiled extensions or platform-specific code.
-- `noarch: generic`: Use for packages without any compiled code (e.g., shell-only recipes).
-- Build backend: Match `pyproject.toml`'s `[build-system].requires`.
-- For ARM enablement and explicit cross-compilation details, see [arm-builds-and-cross-compilation.md](references/arm-builds-and-cross-compilation.md).
-
-### References
-
-- [Python recipe template](references/example-recipe-python.md)
-- [Go recipe template](references/example-recipe-go.md)
-- [Rust recipe template](references/example-recipe-rust.md)
-- [ARM builds and cross-compilation](references/arm-builds-and-cross-compilation.md)
-- [Shell completions for CLI packages](references/shell-completions.md)
-- [Recipe migration (v0 → v1)](references/rattler-build-migration.md)
+Keep existing maintainer work intact. Never push development branches to the upstream feedstock: those branches can publish packages. Do not post routine status commentary merely because a check changed.
